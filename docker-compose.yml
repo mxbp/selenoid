@@ -1,0 +1,102 @@
+---
+version: '3'
+services:
+
+  selenoid:
+    image: aerokube/selenoid:1.10.10
+    container_name: selenoid
+    command: >
+      -conf /etc/selenoid/browsers.json
+      -video-output-dir /opt/selenoid/video
+      -log-output-dir /opt/selenoid/logs
+    environment:
+    - OVERRIDE_VIDEO_OUTPUT_DIR=./selenoid/video
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ./selenoid/browsers.json:/etc/selenoid/browsers.json
+    - ./selenoid/video:/opt/selenoid/video
+    - ./selenoid/logs:/opt/selenoid/logs
+    ports:
+    - 4444:4444
+    network_mode: bridge
+    restart: always
+
+  selenoid-ui:
+    image: aerokube/selenoid-ui:1.10.9
+    container_name: selenoid-ui
+    command: --selenoid-uri http://selenoid:4444
+    ports:
+    - 8080:8080
+    network_mode: bridge
+    depends_on:
+    - selenoid
+    links:
+    - selenoid
+    restart: always
+
+  telegraf:
+    image: telegraf:alpine
+    container_name: telegraf
+    volumes:
+    - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf
+    ports:
+    - 9273:9273
+    network_mode: bridge
+    depends_on:
+    - selenoid
+    links:
+    - selenoid
+    restart: always
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: cadvisor
+    volumes:
+    - /:/rootfs:ro
+    - /var/run:/var/run:ro
+    - /sys:/sys:ro
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    - /dev/disk/:/dev/disk:ro
+    ports:
+    - 8081:8080
+    network_mode: bridge
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:v2.42.0
+    container_name: prometheus
+    hostname: prometheus
+    volumes:
+    - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    - ./prometheus/data:/prometheus
+    ports:
+    - 9090:9090
+    network_mode: bridge
+    depends_on:
+    - telegraf
+    - cadvisor
+    links:
+    - telegraf
+    - cadvisor
+    restart: always
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    environment:
+    - GF_SECURITY_ADMIN_USER=admin
+    - GF_SECURITY_ADMIN_PASSWORD=admin
+    - GF_AUTH_ANONYMOUS_ENABLED=true
+    - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+    - ./grafana/data:/var/lib/grafana
+    - ./grafana/provisioning:/etc/grafana/provisioning
+    ports:
+    - 3000:3000
+    network_mode: bridge
+    depends_on:
+    - prometheus
+    links:
+    - prometheus
+    restart: always
+...
